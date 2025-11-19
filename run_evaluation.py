@@ -93,8 +93,30 @@ def main():
     try:
         if args.fold is not None:
             print(f"评估 Fold {args.fold}...")
-            # TODO: 实现单折评估
-            print("⚠️  单折评估功能待实现")
+            # 单折评估
+            from src.config import get_training_config
+            from src.dataset import build_splits
+            import torch
+            
+            training_config = get_training_config()
+            modalities = data_config.get('modalities', ['DWI'])
+            num_folds = training_config.get('num_folds', 5)
+            
+            # 验证fold索引
+            if args.fold < 0 or args.fold >= num_folds:
+                print(f"✗ 错误: Fold索引必须在0到{num_folds-1}之间")
+                return
+            
+            # 设置设备
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            
+            # 构建数据集划分
+            folds, cases = build_splits(num_folds, modalities=modalities)
+            
+            # 评估指定的折
+            _, val_idx = folds[args.fold]
+            from src.evaluate import evaluate_fold
+            evaluate_fold(args.fold, val_idx, cases, device, data_config)
         else:
             print("评估所有折...")
             run_eval()

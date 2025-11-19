@@ -86,7 +86,7 @@
 - 进度条显示
 
 ### 5. 评估系统 (`src/evaluate.py`, `src/aggregate_results.py`)
-- 计算 Dice、Hausdorff、体积相似度
+- 计算 Dice、DSC、Hausdorff、NSD
 - 生成预测可视化
 - 汇总所有折的统计结果
 

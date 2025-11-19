@@ -22,7 +22,7 @@ from .config import get_data_config, get_training_config
 def main():
     """读取评估文件并输出总体统计。
 
-    遍历所有折的评估结果文件，收集Dice系数、Hausdorff距离和体积相似度等指标，
+    遍历所有折的评估结果文件，收集所有评估指标，
     计算它们的均值和标准差并打印输出。
     """
     # 获取配置
@@ -32,7 +32,7 @@ def main():
     num_folds = training_config.get('num_folds', 5)
     
     # 初始化指标列表
-    dices, hausdorffs, vols = [], [], []
+    dices, dscs, hausdorffs, nsds = [], [], [], []
     
     # 遍历所有折的评估文件
     for fold in range(num_folds):
@@ -48,8 +48,9 @@ def main():
             for row in reader:
                 # 收集各项指标
                 dices.append(float(row['dice']))
+                dscs.append(float(row['dsc']))
                 hausdorffs.append(float(row['hausdorff']))
-                vols.append(float(row['volume_similarity']))
+                nsds.append(float(row['nsd']))
     
     # 检查是否有数据
     if len(dices) == 0:
@@ -57,9 +58,14 @@ def main():
         return
     
     # 计算并输出各项指标的统计结果
-    print(f'Dice: mean={np.mean(dices):.4f}, std={np.std(dices):.4f}')
+    print('='*60)
+    print('评估指标汇总')
+    print('='*60)
+    print(f'Dice:      mean={np.mean(dices):.4f}, std={np.std(dices):.4f}')
+    print(f'DSC:       mean={np.mean(dscs):.4f}, std={np.std(dscs):.4f}')
     print(f'Hausdorff: mean={np.mean(hausdorffs):.2f}, std={np.std(hausdorffs):.2f}')
-    print(f'Volume similarity: mean={np.mean(vols):.4f}, std={np.std(vols):.4f}')
+    print(f'NSD:       mean={np.mean(nsds):.4f}, std={np.std(nsds):.4f}')
+    print('='*60)
 
 if __name__ == '__main__':
     main()

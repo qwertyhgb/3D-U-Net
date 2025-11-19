@@ -1,26 +1,26 @@
 """
 文件名称：metrics.py
-文件功能：实现分割评估指标，包括 Dice、Hausdorff 距离与体积相似度。
+文件功能：实现分割评估指标。
 作者：TraeAI 助手
 创建日期：2025-11-18
-最后修改日期：2025-11-18
-版本：v1.0
+最后修改日期：2025-11-19
+版本：v1.2
 版权声明：Copyright (c) 2025, All rights reserved.
 
 详细说明：
-- dice_coefficient: 计算预测结果与真实标签之间的 Dice 系数
-- hausdorff_distance: 计算预测结果与真实标签之间的 Hausdorff 距离
-- volume_similarity: 计算预测结果与真实标签之间的体积相似度
-- torch_dice: 在 Torch 张量上计算 Dice 系数（阈值化后）
-这些指标用于全面评估分割模型的性能
+- dice_coefficient: 计算 Dice 系数（重叠度）
+- dsc: DSC指标（与dice_coefficient相同，别名）
+- hausdorff_distance: 计算 Hausdorff 距离
+- nsd: 归一化表面距离（Normalized Surface Distance）
+- torch_dice: 在 Torch 张量上计算 Dice 系数
 """
 
 import numpy as np
 import torch
-from scipy.spatial.distance import directed_hausdorff
+from scipy.spatial.distance import directed_hausdorff, cdist
 
 
-def dice_coefficient(pred: np.ndarray, gt: np np.ndarray, eps: float = 1e-8) -> float:
+def dice_coefficient(pred: np.ndarray, gt: np.ndarray, eps: float = 1e-8) -> float:
     """计算 Dice 系数。
 
     Dice系数是用于评估两个样本相似度的统计工具，常用于图像分割任务中评估预测结果的准确性。
@@ -79,25 +79,68 @@ def hausdorff_distance(pred: np.ndarray, gt: np.ndarray) -> float:
     return float(max(h1, h2))
 
 
-def volume_similarity(pred: np.ndarray, gt: np.ndarray, eps: float = 1e-8) -> float:
-    """计算体积相似度（Volume Similarity）。
-
-    体积相似度衡量预测结果与真实标签在体积上的相似程度。
-    其值在0到1之间，1表示体积完全一致，0表示体积差异最大。
-
-    参数：
-        pred (np.ndarray): 预测概率或二值图，形状为[Z,Y,X]。
-        gt (np.ndarray): 真实标签二值图，形状为[Z,Y,X]。
-        eps (float): 平滑项，用于防止分母为零的情况，默认值为1e-8。
-    返回：
-        float: 体积相似度，范围[0,1]，值越大表示体积越接近。
-    """
-    # 计算预测结果和真实标签的体积（非零元素个数）
-    vp = (pred > 0.5).sum()
-    vg = (gt > 0.5).sum()
+def dsc(pred: np.ndarray, gt: np.ndarray, eps: float = 1e-8) -> float:
+    """计算 DSC (Dice Similarity Coefficient) - 重叠度指标
     
-    # 根据体积相似度公式计算结果
-    return 1.0 - (abs(vp - vg) / (vp + vg + eps))
+    DSC是dice_coefficient的别名，用于明确表示这是重叠度指标。
+    
+    参数：
+        pred: 预测概率或二值图，形状为[Z,Y,X]
+        gt: 真实标签二值图，形状为[Z,Y,X]
+        eps: 平滑项，默认1e-8
+    
+    返回：
+        DSC值，范围[0,1]，越大越好
+    """
+    return dice_coefficient(pred, gt, eps)
+
+
+def nsd(pred: np.ndarray, gt: np.ndarray, threshold: float = 2.0) -> float:
+    """计算 NSD (Normalized Surface Distance) - 归一化表面距离
+    
+    NSD衡量预测表面与真实表面之间的距离在给定阈值内的比例。
+    该指标对边界精度敏感，值越大表示边界越准确。
+    
+    参数：
+        pred: 预测概率或二值图，形状为[Z,Y,X]
+        gt: 真实标签二值图，形状为[Z,Y,X]
+        threshold: 距离阈值（单位：像素），默认2.0
+    
+    返回：
+        NSD值，范围[0,1]，越大越好
+    """
+    # 二值化
+    pred_binary = (pred > 0.5).astype(np.uint8)
+    gt_binary = (gt > 0.5).astype(np.uint8)
+    
+    # 提取表面点（边界点）
+    from scipy.ndimage import binary_erosion
+    
+    # 通过腐蚀操作获取边界
+    pred_surface = pred_binary ^ binary_erosion(pred_binary)
+    gt_surface = gt_binary ^ binary_erosion(gt_binary)
+    
+    # 获取表面点坐标
+    pred_pts = np.argwhere(pred_surface > 0)
+    gt_pts = np.argwhere(gt_surface > 0)
+    
+    # 如果任一表面为空，返回0
+    if len(pred_pts) == 0 or len(gt_pts) == 0:
+        return 0.0
+    
+    # 计算预测表面到真实表面的最小距离
+    distances_pred_to_gt = cdist(pred_pts, gt_pts, metric='euclidean').min(axis=1)
+    
+    # 计算真实表面到预测表面的最小距离
+    distances_gt_to_pred = cdist(gt_pts, pred_pts, metric='euclidean').min(axis=1)
+    
+    # 合并所有距离
+    all_distances = np.concatenate([distances_pred_to_gt, distances_gt_to_pred])
+    
+    # 计算在阈值内的点的比例
+    nsd_value = (all_distances <= threshold).sum() / len(all_distances)
+    
+    return float(nsd_value)
 
 
 @torch.no_grad()

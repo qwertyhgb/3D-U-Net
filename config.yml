@@ -9,6 +9,84 @@ data:
   target_shape: [256, 256, 32]
   use_torchio: true
 
+# 数据增强配置
+augmentation:
+  # 增强策略: 'standard', 'light', 'intensity_only', 'adaptive'
+  strategy: 'adaptive'
+  
+  # 几何变换参数
+  flip_axes: [0, 1, 2]  # 翻转轴
+  flip_probability: 0.5  # 翻转概率
+  
+  # 仿射变换参数
+  affine:
+    degrees: 15  # 旋转角度范围
+    translation: 10  # 平移范围
+    scales: 0.15  # 缩放范围
+    probability: 0.7  # 应用概率
+  
+  # 弹性形变参数
+  elastic:
+    num_control_points: 7  # 控制点数
+    max_displacement: 7.5  # 最大位移
+    probability: 0.3  # 应用概率
+  
+  # 医学影像特定增强参数
+  medical:
+    # 运动伪影
+    motion:
+      degrees: 15  # 旋转角度
+      translation: 5  # 平移范围
+      num_transforms: 2  # 变换次数
+      probability: 0.1  # 应用概率
+    
+    # 偏置场
+    bias_field:
+      coefficients: 0.3  # 系数范围
+      probability: 0.2  # 应用概率
+    
+    # 强度缩放
+    intensity_scaling:
+      factors: [0.8, 1.2]  # 缩放因子范围
+      probability: 0.2  # 应用概率
+    
+    # Gamma变换
+    gamma:
+      range: [0.8, 1.2]  # Gamma值范围
+      probability: 0.2  # 应用概率
+    
+    # 区域交换
+    swap:
+      patch_size: 15  # 交换区域大小
+      num_swaps: 4  # 交换次数
+      probability: 0.1  # 应用概率
+    
+    # 各向异性
+    anisotropy:
+      downsampling: [1.5, 2.5]  # 下采样范围
+      probability: 0.05  # 应用概率
+  
+  # 强度变换参数
+  intensity:
+    # 噪声
+    noise:
+      std: [0, 0.1]  # 标准差范围
+      probability: 0.2  # 应用概率
+    
+    # 模糊
+    blur:
+      std: [0.5, 1.5]  # 标准差范围
+      probability: 0.2  # 应用概率
+  
+  # 自适应增强参数
+  adaptive:
+    # 初始强度因子
+    initial_intensity: 1.0
+    # 最终强度因子
+    final_intensity: 0.5
+    # 强度衰减率
+    decay_rate: 0.5
+
 # 训练参数
 training:
   batch_size: 4
@@ -18,3 +96,40 @@ training:
   num_folds: 5
   num_workers: 2
   amp: true  # 混合精度训练（需要 CUDA）
+  
+  # 损失函数配置
+  # 可选类型: 'dice', 'bce', 'dice_bce'
+  loss:
+    type: 'dice_bce'      # Dice损失 + BCE损失
+    dice_weight: 0.5      # Dice损失权重
+    bce_weight: 0.5       # BCE损失权重
+  
+  # 优化器配置
+  # 可选类型: 'adam', 'adamw', 'radam', 'sgd', 'rmsprop'
+  optimizer:
+    type: 'adamw'  # 使用AdamW优化器
+    lr: 0.0001  # 学习率
+    weight_decay: 0.01  # 权重衰减
+    # Adam特定参数
+    betas: [0.9, 0.999]
+    eps: 1e-8
+  
+  # 学习率调度器配置
+  # 可选类型: 'plateau', 'cosine', 'polynomial', 'exponential', 'cyclic', 'onecycle'
+  scheduler:
+    type: 'cosine'  # 使用余弦退火调度器
+    # ReduceLROnPlateau参数
+    mode: 'min'
+    factor: 0.5
+    patience: 3
+    # CosineAnnealingWarmRestarts参数
+    T_0: 10  # 第一次重启的周期长度
+    T_mult: 1  # 每次重启后周期长度的乘数因子
+    eta_min: 1e-6  # 最小学习率
+    # PolynomialLR参数
+    power: 0.9  # 多项式幂次
+  
+  # 梯度裁剪配置
+  gradient_clipping:
+    type: 'norm'  # 裁剪类型: 'norm' 或 'value'
+    max_norm: 1.0  # 最大范数或值

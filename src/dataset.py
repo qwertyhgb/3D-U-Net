@@ -3,12 +3,16 @@
 文件功能：定义数据收集、预处理与数据集封装，输出统一尺寸的张量供模型训练与评估。
 创建日期：2025-11-18
 最后修改日期：2025-11-19
-版本：v1.1
+版本：v2.0
 版权声明：Copyright (c) 2025, All rights reserved.
+更新内容：
+- 支持多种数据增强策略配置
+- 添加自适应增强强度调整
+- 支持医学影像特定增强方法
 """
 
 import os
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -16,10 +20,13 @@ from torch.utils.data import Dataset
 from .config import get_data_config
 from .utils import read_volume, clip_and_normalize, pad_or_crop_to_shape
 # 保留原有的变换模块以保持向后兼容性
-from .transforms3d import apply_augmentations, apply_augmentations_multi
+from .transforms3d import apply_augmentations, apply_augmentations_multi, adaptive_augmentations
 # 新增torchio变换模块
 try:
-    from .torchio_transforms import get_train_transforms, get_validation_transforms, apply_transforms_single, apply_transforms_multi
+    from .torchio_transforms import (
+        get_train_transforms, get_validation_transforms, apply_transforms_single, apply_transforms_multi,
+        get_adaptive_train_transforms, get_intensity_only_transforms, get_light_transforms
+    )
     TORCHIO_AVAILABLE = True
 except ImportError:
     TORCHIO_AVAILABLE = False
@@ -93,10 +100,13 @@ class ProstateDataset(Dataset):
         augment (bool): 是否启用增强。
         normalize_hu (bool): 是否采用 HU 归一化（适用于 CT）。
         use_torchio (bool): 是否使用torchio进行数据增强。
+        augmentation_config (Dict): 数据增强配置。
+        epoch (int): 当前训练轮次，用于自适应增强。
     """
 
     def __init__(self, cases: List[Dict], augment: bool = False, normalize_hu: bool = False, 
-                 modalities: List[str] = None, use_torchio: bool = False):
+                 modalities: List[str] = None, use_torchio: bool = None, 
+                 augmentation_config: Optional[Dict] = None, epoch: int = 0, total_epochs: int = 100):
         """初始化数据集。
 
         参数：
@@ -104,21 +114,82 @@ class ProstateDataset(Dataset):
             augment (bool): 是否在 `__getitem__` 中启用数据增强。
             normalize_hu (bool): 是否按CT的HU值范围进行归一化，否则使用通用的分位数归一化。
             modalities (List[str]): 当前数据集处理的模态列表，用于多模态数据加载。
-            use_torchio (bool): 是否使用torchio进行数据增强。
+            use_torchio (bool): 是否使用torchio进行数据增强。如果为None，则从配置文件读取。
+            augmentation_config (Dict): 数据增强配置。如果为None，则从配置文件读取。
+            epoch (int): 当前训练轮次，用于自适应增强。
+            total_epochs (int): 总训练轮次，用于自适应增强。
         """
         self.cases = cases
         self.augment = augment
         self.normalize_hu = normalize_hu
         self.modalities = modalities or get_data_config().get('modalities', ['DWI'])
         self.target_shape = tuple(get_data_config().get('target_shape', (256, 256, 32)))
-        self.use_torchio = use_torchio and TORCHIO_AVAILABLE
         
-        # 如果使用torchio，初始化变换
-        if self.use_torchio:
-            if augment:
-                self.transform = get_train_transforms()
+        # 从配置文件获取use_torchio设置，如果没有明确指定
+        if use_torchio is None:
+            self.use_torchio = get_data_config().get('use_torchio', False) and TORCHIO_AVAILABLE
+        else:
+            self.use_torchio = use_torchio and TORCHIO_AVAILABLE
+            
+        # 获取数据增强配置
+        if augmentation_config is None:
+            # 尝试从配置文件获取增强配置
+            try:
+                from .config import get_augmentation_config
+                self.augmentation_config = get_augmentation_config()
+            except Exception as e:
+                # 如果无法获取配置，使用默认配置
+                print(f"警告: 无法加载增强配置，使用默认配置: {e}")
+                self.augmentation_config = {}
+        else:
+            self.augmentation_config = augmentation_config
+            
+        # 获取增强策略
+        self.augmentation_strategy = self.augmentation_config.get('strategy', 'standard')
+        
+        # 自适应增强参数
+        self.epoch = epoch
+        self.total_epochs = total_epochs
+        
+        # 初始化变换
+        self._init_transforms()
+
+    def _init_transforms(self):
+        """根据配置初始化数据增强变换。"""
+        if not self.use_torchio:
+            return
+            
+        if self.augment:
+            # 根据策略选择不同的增强方法
+            if self.augmentation_strategy == 'adaptive':
+                # 自适应增强，在__getitem__中根据epoch动态生成
+                self.transform = None
+            elif self.augmentation_strategy == 'intensity_only':
+                # 仅强度变换
+                self.transform = get_intensity_only_transforms(self.augmentation_config)
+            elif self.augmentation_strategy == 'light':
+                # 轻量级增强
+                self.transform = get_light_transforms(self.augmentation_config)
             else:
-                self.transform = get_validation_transforms()
+                # 标准增强 - 传递probability和config参数
+                probability = self.augmentation_config.get('probability', 0.5)
+                self.transform = get_train_transforms(probability=probability, config=self.augmentation_config)
+        else:
+            # 验证时不增强
+            self.transform = get_validation_transforms()
+            
+    def set_epoch(self, epoch: int):
+        """设置当前训练轮次，用于自适应增强。
+        
+        参数：
+            epoch (int): 当前训练轮次。
+        """
+        self.epoch = epoch
+        # 如果使用自适应增强，需要重新初始化变换
+        if self.augment and self.use_torchio and self.augmentation_strategy == 'adaptive':
+            self.transform = get_adaptive_train_transforms(
+                self.epoch, self.total_epochs, self.augmentation_config
+            )
 
     def __len__(self):
         """返回数据集大小。"""
@@ -160,20 +231,42 @@ class ProstateDataset(Dataset):
         imgs = [self._normalize(v) for v in imgs]
         imgs = [pad_or_crop_to_shape(v, self.target_shape) for v in imgs]
 
-        if self.augment and self.use_torchio:
-            # 使用torchio进行数据增强
-            if len(imgs) == 1:
-                img, lab = apply_transforms_single(imgs[0], lab, self.transform)
-                imgs = [img]
+        if self.augment:
+            if self.use_torchio:
+                # 使用torchio进行数据增强
+                # 对于自适应增强，变换可能为None，需要动态生成
+                if self.augmentation_strategy == 'adaptive' and self.transform is None:
+                    self.transform = get_adaptive_train_transforms(
+                        self.epoch, self.total_epochs, self.augmentation_config
+                    )
+                
+                if len(imgs) == 1:
+                    img, lab = apply_transforms_single(imgs[0], lab, self.transform)
+                    imgs = [img]
+                else:
+                    imgs, lab = apply_transforms_multi(imgs, lab, self.transform)
             else:
-                imgs, lab = apply_transforms_multi(imgs, lab, self.transform)
-        elif self.augment:
-            # 使用原有的数据增强方法
-            if len(imgs) == 1:
-                img, lab = apply_augmentations(imgs[0], lab)
-                imgs = [img]
-            else:
-                imgs, lab = apply_augmentations_multi(imgs, lab)
+                # 使用原有的数据增强方法
+                if self.augmentation_strategy == 'adaptive':
+                    # 使用自适应增强
+                    if len(imgs) == 1:
+                        img, lab = adaptive_augmentations(
+                            imgs[0], lab, self.epoch, self.total_epochs, self.augmentation_config
+                        )
+                        imgs = [img]
+                    else:
+                        # 对于多模态数据，只对第一个模态应用自适应增强，然后同步到其他模态
+                        img0, lab = adaptive_augmentations(
+                            imgs[0], lab, self.epoch, self.total_epochs, self.augmentation_config
+                        )
+                        imgs = [img0] + imgs[1:]
+                else:
+                    # 使用标准增强
+                    if len(imgs) == 1:
+                        img, lab = apply_augmentations(imgs[0], lab)
+                        imgs = [img]
+                    else:
+                        imgs, lab = apply_augmentations_multi(imgs, lab)
 
         img_stack = np.stack(imgs, axis=0)  # 堆叠成 [C, Z, Y, X] 格式
         img_t = torch.from_numpy(img_stack)

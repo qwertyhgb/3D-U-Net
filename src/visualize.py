@@ -16,12 +16,9 @@
 
 import os
 import numpy as np
-import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-from .utils import save_nifti_like
 
 
 def visualize_overlay(volume: np.ndarray, pred: np.ndarray, gt: np.ndarray, out_png: str, n_slices: int = 6):

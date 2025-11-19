@@ -88,3 +88,6 @@ def get_data_config():
 
 def get_training_config():
     return config.get('training', {})
+
+def get_augmentation_config():
+    return config.get('augmentation', {})
