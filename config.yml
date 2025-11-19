@@ -1,0 +1,20 @@
+# 默认实验配置
+
+# 数据与路径
+data:
+  data_root: './data/BPH-PCA'
+  label_root: './data/BPH-PCA/ROI(BPH+PCA)'
+  output_dir: './outputs'
+  modalities: ['DWI']
+  target_shape: [256, 256, 32]
+  use_torchio: true
+
+# 训练参数
+training:
+  batch_size: 4
+  num_epochs: 100
+  learning_rate: 0.0001
+  patience: 10
+  num_folds: 5
+  num_workers: 2
+  amp: true  # 混合精度训练（需要 CUDA）

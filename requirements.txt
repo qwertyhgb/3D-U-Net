@@ -1,0 +1,29 @@
+# 深度学习框架
+torch>=1.12.1,<2.0.0
+torchvision>=0.13.1
+
+# 数值计算
+numpy>=1.23.5,<2.0.0
+scipy>=1.10.1
+
+# 医学影像处理
+SimpleITK>=2.2.1
+nibabel>=5.0.0
+torchio>=0.21.0
+
+# 可视化
+matplotlib>=3.7.1
+seaborn>=0.12.0
+
+# 工具库
+tqdm>=4.65.0
+PyYAML>=6.0
+tensorboard>=2.11.2
+
+# 数据处理
+pandas>=1.5.0
+scikit-learn>=1.2.0
+
+# 可选：Jupyter 支持
+# jupyter>=1.0.0
+# ipywidgets>=8.0.0
