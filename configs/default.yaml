@@ -1,0 +1,57 @@
+# 3D U-Net 前列腺MRI分割项目默认配置文件
+
+experiment:
+  # 实验名称，用于标识不同的实验
+  name: baseline-3d-unet
+  # 输出目录，保存模型权重、日志等文件
+  output_dir: outputs
+  # 随机种子，确保实验结果可重现
+  seed: 42
+  # 计算设备，cuda表示使用GPU，cpu表示使用CPU
+  device: cuda
+
+data:
+  # 数据根目录，包含所有病例数据
+  root_dir: data/BPH-PCA
+  # ROI标签子目录名称
+  roi_subdir: "ROI(BPH+PCA)"
+  # 数据分组列表，BPH表示良性前列腺增生，PCA表示前列腺癌
+  groups: ["BPH", "PCA"]
+  # 使用的MRI模态列表
+  modalities:
+    - "ADC"       # 表观扩散系数模态
+    - "DWI"       # 弥散加权成像模态
+    - "T2 fs"     # T2脂肪抑制模态
+    - "T2 not fs" # T2非脂肪抑制模态
+  # 验证集比例，用于划分训练集和验证集
+  val_ratio: 0.2
+  # 批次大小，每次训练迭代处理的样本数
+  batch_size: 1
+  # 数据加载器的工作进程数，用于并行加载数据
+  num_workers: 2
+  # 图像块大小，格式为[深度, 高度, 宽度]
+  patch_size: [128, 128, 64]
+  # 是否启用数据增强
+  augment: true
+
+model:
+  # 输入通道数，对应使用的MRI模态数量
+  in_channels: 4
+  # 输出通道数，1表示二分类分割任务
+  out_channels: 1
+  # 初始特征通道数，控制模型复杂度
+  init_features: 32
+
+training:
+  # 训练轮数（epochs）
+  epochs: 100
+  # 初始学习率
+  lr: 0.0002
+  # 权重衰减系数，用于L2正则化
+  weight_decay: 1.0e-5
+  # 是否启用自动混合精度训练，提高训练效率
+  amp: true
+  # 梯度裁剪阈值，防止梯度爆炸
+  grad_clip: 1.0
+  # 每多少轮保存一次模型检查点
+  save_every: 5
